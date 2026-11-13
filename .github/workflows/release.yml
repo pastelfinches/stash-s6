@@ -7,21 +7,24 @@ on:
       - 'dockerfile/**'
       - 'docker-bake.hcl'
       - 'stash/**'
-      - 'VERSION'
+      - 'STASH_VERSION'
   workflow_dispatch:
   schedule:
+    # monthly rebuild for base image and package updates
     - cron: '0 0 1 * *'
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
+concurrency:
+  group: release-bake
+  cancel-in-progress: false
 
 jobs:
   bake:
     runs-on: ubuntu-latest
     steps:
-      # checkout for timestamp
       - uses: actions/checkout@v5
       - id: meta
         name: set meta environment variables
@@ -29,7 +32,7 @@ jobs:
           echo "EPOCH=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
           echo "TIMESTAMP=$(git log -1 --pretty=%cI)" >> $GITHUB_OUTPUT
           echo "GITHASH=$(git rev-parse --short ${{ github.sha }})" >> $GITHUB_OUTPUT
-      # set up qemu and buildx
+          echo "STASH_VERSION=$(tr -d '[:space:]' < STASH_VERSION)" >> $GITHUB_OUTPUT
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm,arm64
@@ -38,24 +41,43 @@ jobs:
           buildkitd-config-inline: |
             [registry."docker.io"]
               mirrors = ["mirror.gcr.io"]
-      # login
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
-      # bake
       - uses: docker/bake-action@v6
         with:
+          source: .
+          files: docker-bake.hcl
           push: true
           targets: |
             release_ci_alpine
             release_ci_debian
         env:
+          CI: true
           GITHASH: ${{ steps.meta.outputs.GITHASH }}
           BUILD_DATE: ${{ steps.meta.outputs.TIMESTAMP }}
           SOURCE_DATE_EPOCH: ${{ env.EPOCH }}
+          STASH_VERSION: ${{ steps.meta.outputs.STASH_VERSION }}
+      - name: create GitHub release for new stash version
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.meta.outputs.STASH_VERSION }}
+          IMAGE: ghcr.io/${{ github.repository }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "release $VERSION exists, images refreshed only"
+            exit 0
+          fi
+          gh release create "$VERSION" --target "$GITHUB_SHA" --title "stash $VERSION" --notes "$(cat <<NOTES
+          Bundles [stashapp/stash $VERSION](https://github.com/stashapp/stash/releases/tag/$VERSION).
+
+          | Variant | Image |
+          |---|---|
+          | alpine | \`$IMAGE:$VERSION\`, \`$IMAGE:alpine-$VERSION\`, \`$IMAGE:latest\` |
+          | hwaccel-alpine | \`$IMAGE:hwaccel-alpine-$VERSION\` |
+          | hwaccel | \`$IMAGE:hwaccel-$VERSION\` |
+          NOTES
+          )"

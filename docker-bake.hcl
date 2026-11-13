@@ -11,7 +11,7 @@ group "release_ci_debian" {
 
 // develop CI
 group "develop_ci_alpine" {
-  targets = ["alpine-develop", "hwaccel-alpine-develop", "hwaccel-develop"]
+  targets = ["alpine-develop", "hwaccel-alpine-develop"]
   output = ["type=registry"]
 }
 
@@ -28,7 +28,19 @@ group "default" {
 // variables
 variable "OWNER_NAME" {
   type = string
-  default = "feederbox826"
+  default = "pastelfinches"
+}
+
+// stashapp/stash tag for release targets, read from the STASH_VERSION file in CI
+variable "STASH_VERSION" {
+  type = string
+  default = "latest"
+}
+
+// stashapp/stash reference for develop targets, pinned to a digest in CI
+variable "STASH_DEVELOP_REF" {
+  type = string
+  default = "development"
 }
 
 variable "IMAGE_NAME" {
@@ -73,7 +85,8 @@ target "_common" {
   args = {
     BUILD_DATE = BUILD_DATE,
     SHORT_BUILD_DATE = SHORT_BUILD_DATE,
-    GITHASH = CI ? GITHASH : "local-build"
+    GITHASH = CI ? GITHASH : "local-build",
+    STASH_TAG = STASH_VERSION
   }
 }
 
@@ -87,7 +100,7 @@ target "_debian_multi" {
 
 target "_develop" {
   args = {
-    STASH_TAG = "development"
+    STASH_TAG = STASH_DEVELOP_REF
   }
 }
 
@@ -179,16 +192,19 @@ function "tag" {
   result = concat(
     [
       "ghcr.io/${OWNER_NAME}/${IMAGE_NAME}:${variant}",
-      "docker.io/${OWNER_NAME}/${IMAGE_NAME}:${variant}",
-      "ghcr.io/${OWNER_NAME}/${IMAGE_NAME}:${variant}-${SHORT_BUILD_DATE}",
-      "docker.io/${OWNER_NAME}/${IMAGE_NAME}:${variant}-${SHORT_BUILD_DATE}"
+      "ghcr.io/${OWNER_NAME}/${IMAGE_NAME}:${variant}-${SHORT_BUILD_DATE}"
     ],
     variant == "alpine" ? [
-      "ghcr.io/${OWNER_NAME}/${IMAGE_NAME}:latest",
-      "docker.io/${OWNER_NAME}/${IMAGE_NAME}:latest"
+      "ghcr.io/${OWNER_NAME}/${IMAGE_NAME}:latest"
     ] : variant == "alpine-develop" ? [
-      "ghcr.io/${OWNER_NAME}/${IMAGE_NAME}:develop",
-      "docker.io/${OWNER_NAME}/${IMAGE_NAME}:develop"
+      "ghcr.io/${OWNER_NAME}/${IMAGE_NAME}:develop"
+    ] : [],
+    // stash version tags, release targets only
+    STASH_VERSION != "latest" && length(regexall("develop$", variant)) == 0 ? [
+      "ghcr.io/${OWNER_NAME}/${IMAGE_NAME}:${variant}-${STASH_VERSION}"
+    ] : [],
+    STASH_VERSION != "latest" && variant == "alpine" ? [
+      "ghcr.io/${OWNER_NAME}/${IMAGE_NAME}:${STASH_VERSION}"
     ] : []
   )
 }

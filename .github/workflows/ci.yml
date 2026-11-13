@@ -1,0 +1,72 @@
+name: ci
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [alpine, hwaccel-alpine, hwaccel]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+        with:
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
+      - id: meta
+        run: echo "STASH_VERSION=$(tr -d '[:space:]' < STASH_VERSION)" >> $GITHUB_OUTPUT
+      - uses: docker/bake-action@v6
+        with:
+          source: .
+          files: docker-bake.hcl
+          targets: ${{ matrix.target }}
+          load: true
+          provenance: false
+          sbom: false
+          set: |
+            *.platforms=linux/amd64
+            *.tags=stash-s6:ci-${{ matrix.target }}
+        env:
+          # disables registry cache-to, which needs a ghcr login
+          CI: false
+          STASH_VERSION: ${{ steps.meta.outputs.STASH_VERSION }}
+      - name: smoke test
+        run: |
+          docker run -d --name stash -e PUID=1000 -e PGID=1000 "stash-s6:ci-${{ matrix.target }}"
+          for i in $(seq 1 30); do
+            if docker exec stash curl -sf http://localhost:9999/healthz >/dev/null; then
+              echo "healthz OK"
+              exit 0
+            fi
+            sleep 3
+          done
+          docker logs stash
+          exit 1
+
+  automerge:
+    needs: build
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: merge dependabot PR
+        run: gh pr merge "${{ github.event.pull_request.number }}" --squash
+      - name: rebuild images
+        # merges made with GITHUB_TOKEN do not trigger push workflows
+        run: |
+          gh workflow run release.yml --ref main
+          gh workflow run develop.yml --ref main

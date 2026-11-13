@@ -3,7 +3,7 @@
 ## Step 1: compatible image
 replace `stashapp/stash` in your docker image with
 [`nerethos/stash-jellyfin-ffmpeg`](https://hub.docker.com/r/nerethos/stash-jellyfin-ffmpeg)
-or `ghcr.io/feederbox826/stash-s6:hwaccel`
+or `ghcr.io/pastelfinches/stash-s6:hwaccel`
 
 ```diff
 services:
@@ -12,7 +12,7 @@ services:
 +   image: nerethos/stash-jellyfin-ffmpeg
 
 -   image: stashapp/stash
-+   image: ghcr.io/feederbox826/stash-s6:hwaccel
++   image: ghcr.io/pastelfinches/stash-s6:hwaccel
 ...
 ```
 Both use jellyfin under the hood and provide hardware acceleration.

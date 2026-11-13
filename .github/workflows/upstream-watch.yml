@@ -1,0 +1,57 @@
+name: upstream-watch
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 */3 * * *'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: check for a new stash release
+        run: |
+          latest=$(gh api repos/stashapp/stash/releases/latest --jq .tag_name)
+          current=$(tr -d '[:space:]' < STASH_VERSION)
+          echo "stash latest release: $latest, bundled: $current"
+          if [ "$latest" = "$current" ]; then
+            exit 0
+          fi
+          if ! curl -sf "https://hub.docker.com/v2/repositories/stashapp/stash/tags/$latest" >/dev/null; then
+            echo "docker.io/stashapp/stash:$latest is not published yet, retrying next run"
+            exit 0
+          fi
+          echo "$latest" > STASH_VERSION
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "bump stash to $latest"
+          git push origin HEAD:main
+          # pushes made with GITHUB_TOKEN do not trigger workflows
+          gh workflow run release.yml --ref main
+      - uses: docker/setup-buildx-action@v3
+      - name: check for a new stash development build
+        run: |
+          digest=$(curl -sf https://hub.docker.com/v2/repositories/stashapp/stash/tags/development | jq -er .digest)
+          built=$(docker buildx imagetools inspect "$IMAGE:develop" --format '{{json .Image}}' 2>/dev/null \
+            | jq -r '."linux/amd64".config.Labels["org.opencontainers.image.base.name"] // empty' || true)
+          echo "stash development: $digest, bundled: ${built:-none}"
+          if [ "$built" != "docker.io/stashapp/stash:development@${digest}" ]; then
+            gh workflow run develop.yml --ref main
+          fi
+      - name: keep scheduled workflows enabled
+        # GitHub disables schedules after 60 days without repository activity
+        run: |
+          for wf in upstream-watch.yml release.yml develop.yml clean-img.yml; do
+            gh api -X PUT "repos/${{ github.repository }}/actions/workflows/$wf/enable"
+          done

@@ -1,4 +1,13 @@
 # stashapp/stash with(out) s6
+
+> **Fork of [feederbox826/stash-s6](https://github.com/feederbox826/stash-s6).** This fork rebuilds and publishes to `ghcr.io/pastelfinches/stash-s6` automatically when stashapp/stash ships a release.
+>
+> - `upstream-watch` checks stashapp/stash every 3 hours. A new release bumps `STASH_VERSION`, builds every release variant, and publishes a GitHub release with the same tag.
+> - A new `development` image rebuilds the `-develop` variants.
+> - Release images carry version tags: `v0.32.0` (alpine), `alpine-v0.32.0`, `hwaccel-alpine-v0.32.0`, `hwaccel-v0.32.0`.
+> - Dependabot updates base images and actions weekly. Each update merges once the CI build and smoke test pass.
+> - Images publish to GHCR only. Docker Hub tags in the upstream docs refer to the upstream images.
+
 ![](docs/icon/horiz-bg.svg)
 for [stashapp/stash#4300](https://github.com/stashapp/stash/issues/4300)
 - non-root user support
@@ -14,20 +23,20 @@ for [stashapp/stash#4300](https://github.com/stashapp/stash/issues/4300)
 ## `latest` / `alpine` ![Docker Image Size (tag)](https://img.shields.io/docker/image-size/feederbox826/stash-s6/alpine)
 
 ```
-ghcr.io/feederbox826/stash-s6:alpine
+ghcr.io/pastelfinches/stash-s6:alpine
 ```
 no hardware acceleration, built on alpine linux
 ## `hwaccel` ![Image size](https://img.shields.io/docker/image-size/feederbox826/stash-s6/hwaccel)
 
 ```
-ghcr.io/feederbox826/stash-s6:hwaccel
+ghcr.io/pastelfinches/stash-s6:hwaccel
 ```
 hardware acceleration from [jellyfin-ffmpeg](https://jellyfin.org/docs/general/administration/hardware-acceleration/), built on debian. (Scheduled to be replaced with v0.29.0 [#46](https://github.com/feederbox826/stash-s6/issues/46))
 
 ## `hwaccel-alpine` ![Image size](https://img.shields.io/docker/image-size/feederbox826/stash-s6/hwaccel-alpine)
 
 ```
-ghcr.io/feederbox826/stash-s6:hwaccel-alpine
+ghcr.io/pastelfinches/stash-s6:hwaccel-alpine
 ```
 hardware acceleration from [jellyfin-ffmpeg](https://jellyfin.org/docs/general/administration/hardware-acceleration/), built on alpine
 
